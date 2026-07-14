@@ -1,0 +1,28 @@
+modules:
+  jira:dashboardGadget:
+    - key: sup-ticket-histogram
+      title: SUP Ticket Histogram
+      description: Sup-Logistik histogram amount of tickets per chosen timeframe
+      resource: main
+      resolver:
+        function: gadget-resolver
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      render: native
+      refreshable: true
+
+  function:
+    - key: gadget-resolver
+      handler: backend/index.handler
+
+resources:
+  - key: main
+    path: src/frontend/main.jsx
+
+permissions:
+  scopes:
+    - read:jira-work
+
+app:
+  runtime:
+    name: nodejs22.x
+  id: ari:cloud:ecosystem::app/afc2d387-aefe-49e0-8547-50ab7f7719cb

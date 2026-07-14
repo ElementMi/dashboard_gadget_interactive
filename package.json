@@ -1,0 +1,19 @@
+{
+  "name": "dashboard-gadget-interactive",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Custom Jira dashboard gadget built with Forge",
+  "scripts": {
+    "lint": "forge lint",
+    "deploy": "forge deploy",
+    "install-app": "forge install",
+    "tunnel": "forge tunnel"
+  },
+  "dependencies": {
+    "@forge/api": "^5.1.0",
+    "@forge/bridge": "^4.5.0",
+    "@forge/react": "^11.0.0",
+    "@forge/resolver": "^1.7.0",
+    "react": "^18.3.1"
+  }
+}
