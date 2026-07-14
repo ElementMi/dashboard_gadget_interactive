@@ -3,6 +3,28 @@ import api, { route } from '@forge/api';
 
 const resolver = new Resolver();
 
+const IMPACT_FIELD_NAMES = [
+  'impact (migrated 2)[dropdown]',
+  'Impact (migrated 2)[dropdown]',
+  'impact',
+  'Impact',
+];
+
+const ORGANIZATION_FIELD_NAMES = [
+  'organization',
+  'Organisation',
+  'Organizations',
+  'Organisationen',
+];
+
+const REACTION_FIELD_NAMES = [
+  'Reaktionszeit',
+  'Reaktionzeit',
+  'Reaktionszeit (SLA)',
+  'Time to first response',
+  'First response time',
+];
+
 function normalizeLabel(value) {
   return (value ?? '').toString().trim().toLowerCase();
 }
@@ -49,31 +71,14 @@ resolver.define('loadGadgetData', async ({ payload }) => {
   const fieldDefinitions = await fieldsResponse.json();
   const namesMap = toNamesMapFromFields(fieldDefinitions);
 
-  const impactFieldId = findFieldIdByDisplayName(namesMap, [
-    'impact (migrated 2)[dropdown]',
-    'Impact (migrated 2)[dropdown]',
-    'impact',
-    'Impact',
-  ]);
-  const organizationFieldId = findFieldIdByDisplayName(namesMap, [
-    'organization',
-    'Organisation',
-    'Organizations',
-    'Organisationen',
-  ]);
-  const reactionFieldId = findFieldIdByDisplayName(namesMap, [
-    'Reaktionszeit',
-    'Reaktionzeit',
-    'Reaktionszeit (SLA)',
-    'Time to first response',
-    'First response time',
-  ]);
+  const impactFieldId = findFieldIdByDisplayName(namesMap, IMPACT_FIELD_NAMES);
+  const organizationFieldId = findFieldIdByDisplayName(namesMap, ORGANIZATION_FIELD_NAMES);
+  const reactionFieldId = findFieldIdByDisplayName(namesMap, REACTION_FIELD_NAMES);
 
   const fieldsToRequest = [
     'created',
     'updated',
     'summary',
-    'status',
     'project',
     'assignee',
   ];

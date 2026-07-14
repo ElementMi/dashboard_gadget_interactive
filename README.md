@@ -43,6 +43,13 @@ Run in project root:
 
 npm install
 
+## NPM Scripts
+
+- npm run lint
+- npm run deploy
+- npm run install-app
+- npm run tunnel
+
 ## Validate App
 
 forge lint --verbose
@@ -52,10 +59,6 @@ forge lint --verbose
 Standard command:
 
 forge deploy -e production
-
-If your shell resolves Forge to a Node 20 global wrapper and deploy packaging fails, use this known working PowerShell command:
-
-& "C:\Users\JohannaMilnikel\AppData\Local\nvm\v22.16.0\node.exe" "C:\Users\JohannaMilnikel\AppData\Local\nvm\v20.18.1\node_modules\@forge\cli\out\bin\cli.js" deploy -e production
 
 ## Install On Jira Site
 
@@ -120,14 +123,6 @@ Fix:
 Notes:
 - Connected apps UI can be flaky/intermittent.
 - Use Forge CLI as source of truth for install/deploy state.
-
-### 4) Forge deploy fails with archiver ES module error
-
-Likely cause:
-- Forge CLI launched under unsupported Node runtime wrapper.
-
-Fix:
-- Run deploy with explicit Node 22 binary command shown above.
 
 ## Useful Commands
 

@@ -1,36 +1,4 @@
-/*
-  ===========================
-  JQL statement full
-  ===========================
-project = SUP
-AND "impact (migrated 2)[dropdown]" IN ("Systemstillstand (hoch) / System downtime (high)", "Schwere Störung (hoch) / Severe disruption (high)")
-AND summary ~ "Sprachnachricht von"
-
-ORDER BY created DESC, "impact (migrated 2)[dropdown]" ASC
-AND created >= "2026-07-06 08:00"
-AND created < "2026-07-13 08:00"
-
-===========================
-  JQL statement without summary
- ===========================
-AND created >= "2026-07-06 08:00"
-AND created < "2026-07-13 08:00"
-
-===========================
-  JQL statement monthly
- ===========================
-AND created >= -30d
-
-===========================
-  Gadget description
- ===========================
-monthly, filters from first monday 8am to next possible monday 8am. 
-weekly, filters from first monday 8am to next possible monday 8am. 
-foreground and table, filters the user statement
-background displays average example of previous year
-*/
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ForgeReconciler, {
   BarChart,
   Button,
@@ -86,10 +54,6 @@ const applyBoxStyles = xcss({
   marginBlockStart: 'space.100',
 });
 
-const secondaryFilterStyles = xcss({
-  marginBlockEnd: 'space.100',
-});
-
 const kpiCardStyles = xcss({
   borderColor: 'color.border',
   borderStyle: 'solid',
@@ -115,6 +79,28 @@ const intervalOptions = [
   { label: 'Hourly', value: 'hour' },
   { label: 'Daily', value: 'day' },
   { label: 'Weekly', value: 'week' },
+];
+
+const IMPACT_FIELD_NAMES = [
+  'impact (migrated 2)[dropdown]',
+  'Impact (migrated 2)[dropdown]',
+  'impact',
+  'Impact',
+];
+
+const ORGANIZATION_FIELD_NAMES = [
+  'organization',
+  'Organisation',
+  'Organizations',
+  'Organisationen',
+];
+
+const REACTION_FIELD_NAMES = [
+  'Reaktionszeit',
+  'Reaktionzeit',
+  'Reaktionszeit (SLA)',
+  'Time to first response',
+  'First response time',
 ];
 
 const BERLIN_TIMEZONE = 'Europe/Berlin';
@@ -374,7 +360,6 @@ function toM1SmaSeries(histogram, timeframeDays, interval) {
     return {
       length: 0,
       data: [],
-      trendChartData: [],
       latest: null,
     };
   }
@@ -404,29 +389,9 @@ function toM1SmaSeries(histogram, timeframeDays, interval) {
 
   const latestPoint = [...points].reverse().find((point) => Number.isFinite(point.m1));
 
-  const trendChartData = [];
-  for (const point of points) {
-    trendChartData.push({
-      xKey: point.xKey,
-      period: point.period,
-      value: Number(histogram.find((bin) => bin.xKey === point.xKey)?.tickets ?? 0),
-      series: 'Tickets',
-    });
-
-    if (Number.isFinite(point.m1)) {
-      trendChartData.push({
-        xKey: point.xKey,
-        period: point.period,
-        value: point.m1,
-        series: 'M1 SMA (HL/2)',
-      });
-    }
-  }
-
   return {
     length,
     data: points.filter((point) => Number.isFinite(point.m1)),
-    trendChartData,
     latest: latestPoint?.m1 ?? null,
   };
 }
@@ -443,16 +408,6 @@ function findFieldIdByDisplayName(namesMap, candidateNames) {
     }
   }
   return null;
-}
-
-function toNamesMapFromFields(fieldDefinitions) {
-  const namesMap = {};
-  for (const field of fieldDefinitions ?? []) {
-    if (field?.id && field?.name) {
-      namesMap[field.id] = field.name;
-    }
-  }
-  return namesMap;
 }
 
 function getFieldByNames(fields, namesMap, candidateNames) {
@@ -525,25 +480,9 @@ function toVisibleIssuesWithNames(issues, window, namesMap) {
     }
 
     const fields = issue?.fields ?? {};
-    const impactValue = getFieldByNames(fields, namesMap, [
-      'impact (migrated 2)[dropdown]',
-      'Impact (migrated 2)[dropdown]',
-      'impact',
-      'Impact',
-    ]);
-    const organizationValue = getFieldByNames(fields, namesMap, [
-      'organization',
-      'Organisation',
-      'Organizations',
-      'Organisationen',
-    ]);
-    const reactionValue = getFieldByNames(fields, namesMap, [
-      'Reaktionszeit',
-      'Reaktionzeit',
-      'Reaktionszeit (SLA)',
-      'Time to first response',
-      'First response time',
-    ]);
+    const impactValue = getFieldByNames(fields, namesMap, IMPACT_FIELD_NAMES);
+    const organizationValue = getFieldByNames(fields, namesMap, ORGANIZATION_FIELD_NAMES);
+    const reactionValue = getFieldByNames(fields, namesMap, REACTION_FIELD_NAMES);
 
     visible.push({
       key: issue.key,
@@ -644,21 +583,20 @@ function getSelectValue(options, value) {
 
 function App() {
   const [timeframeDays, setTimeframeDays] = useState(30);
-  const [secondaryJqlInput, setSecondaryJqlInput] = useState('');
   const [jqlInput, setJqlInput] = useState('');
   const [appliedJql, setAppliedJql] = useState(DEFAULT_JQL);
   const [interval, setInterval] = useState('day');
   const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
+  const hasLoadedOnceRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
     async function loadHistogram() {
-      if (!hasLoadedOnce) {
+      if (!hasLoadedOnceRef.current) {
         setLoading(true);
       } else {
         setIsUpdating(true);
@@ -676,7 +614,7 @@ function App() {
         const histogram = toTimeHistogram(issues, interval, window);
         const m1Sma = timeframeDays === 30
           ? toM1SmaSeries(histogram, timeframeDays, interval)
-          : { length: 0, data: [], trendChartData: [], latest: null };
+          : { length: 0, data: [], latest: null };
         const visibleIssues = toVisibleIssuesWithNames(issues, window, namesMap);
         const visibleTotal = histogram.reduce((sum, bucket) => sum + bucket.tickets, 0);
         const kpis = computeKpis(visibleIssues, window, timeframeDays === 30 ? m1Sma.latest : null);
@@ -702,9 +640,9 @@ function App() {
         setError(e?.message ?? 'Unexpected error while loading gadget data.');
         setData(null);
       } finally {
-        if (mounted && !hasLoadedOnce) {
+        if (mounted && !hasLoadedOnceRef.current) {
           setLoading(false);
-          setHasLoadedOnce(true);
+          hasLoadedOnceRef.current = true;
         }
 
         if (mounted) {
@@ -717,7 +655,7 @@ function App() {
     return () => {
       mounted = false;
     };
-  }, [timeframeDays, interval, appliedJql, hasLoadedOnce]);
+  }, [timeframeDays, interval, appliedJql]);
 
   if (loading) {
     return (
@@ -738,17 +676,6 @@ function App() {
 
   return (
     <Box xcss={gadgetShellStyles}>
-      <Box xcss={secondaryFilterStyles}>
-        <Label labelFor="secondary-jql-filter">Secondary JQL filter (inactive)</Label>
-        <TextArea
-          id="secondary-jql-filter"
-          name="secondary-jql-filter"
-          value={secondaryJqlInput}
-          placeholder="This field is currently not applied."
-          resize="smart"
-          onChange={(event) => setSecondaryJqlInput(event?.target?.value ?? '')}
-        />
-      </Box>
       <Inline alignBlock="start" space="space.100" shouldWrap xcss={controlRowStyles}>
         <Box xcss={jqlBoxStyles}>
           <Label labelFor="jql-filter">Foreground JQL filter</Label>
