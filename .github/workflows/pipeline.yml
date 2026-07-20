@@ -1,0 +1,110 @@
+name: pipeline - code quality # one run per pull request
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# on has multiple trigger options...
+# Code events -> push -> Any commit pushed to the repo
+# Code events -> pull_request -> Any pull request opened, synchronized, or reopened
+# Code events -> create -> Branch or tag created
+# Code events -> delete -> Branch or tag deleted
+# scheduled -> schedule -> Cron timer, e.g. every night at midnight
+# Repo activity events -> issues -> Issue opened, closed, labeled, etc.
+# Repo activity events -> issue_comment -> Comment added to issue or PR
+on: 
+  push:               # runs checks on any branch push (including main after merge)
+    branches: ["**"]
+  pull_request:       # optional pre-merge check when targeting main
+    branches: ["main"]
+  workflow_dispatch:  # manual trigger for testing
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# jobs: 1 job can have MULTIPLE steps, which run in a waterfall, if one fails the next ones wont run.
+# Every job has 1 name, and 1 runner
+# 2 jobs can run in parallel, or one after another with needs. 
+# Jobs run on VMs, which are created then destroyed for each job. 
+# A different order of steps is forced by needs.
+
+jobs:
+  lint-and-test:
+    # run quality checks based on the workflow triggers defined above
+    runs-on: ubuntu-latest # do not change this! other options are 'windows-latest' and 'macos-latest'
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+    # steps has multiple trigger options...
+    # needs — run jobs in order, Without needs, all jobs run in parallel at the same time.
+    # if — clause, condition
+    # environment — deployment targets with protection rules, e.g. github settings
+    # strategy - runs same job multiple times with different values, e.g. different python versions
+    # outputs — pass values from one job to another
+    # timeout-minutes — kill job if it runs too long
+    # permissions — control what the job is allowed to do in GitHub 
+    steps:
+      - name: Checkout repository # do not remove, important for lint testing, pipeline will fail otherwise
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js # installs Node.js runtime and npm on the runner
+        uses: actions/setup-node@v4 
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Dependency NPM-Setup # installs javascript dependencies from package-lock.json
+        run: |
+          npm ci
+
+      - name: Forge CLI Setup # required because npm run lint uses forge lint
+        run: npm install --global @forge/cli
+      # Forge CLI non-interactive analytics setting is required because npm run lint uses forge lint
+      - name: Forge CLI non-interactive analytics setting
+        run: forge settings set usage-analytics true
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+      # lint = code quality checker that scans your code without running it (like a spell-checker in Word)
+      # eslint/forge-lint checks for e.g. unused imports, unused variables, and other code quality issues.
+      # lint runs earliest possible, dependencies and forge cli need to be installed first in Dependency NPM-Setup
+      - name: Lint Spell-Checker
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: |
+          if [ -n "$FORGE_EMAIL" ] && [ -n "$FORGE_API_TOKEN" ]; then
+            npm run lint
+          else
+            echo "Skipping forge lint: FORGE_EMAIL and/or FORGE_API_TOKEN secret is not set."
+          fi
+
+      # security scan = finds security vulnerabilities
+      - name: NPM Security Scan
+        run: npm audit --audit-level=high || true
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+  # each push to main (including merge commits from pull requests) can deploy to production
+  deploy-forge-production:
+    # auto deploy only after successful quality checks on pushes to main
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Dependency NPM-Setup
+        run: npm ci
+
+      - name: Forge CLI Setup
+        run: npm install --global @forge/cli
+
+      - name: Forge CLI non-interactive analytics setting
+        run: forge settings set usage-analytics true
+
+      - name: Deploy gadget to Atlassian production
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: forge deploy -e production --non-interactive
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
