@@ -62,6 +62,9 @@ jobs:
       # eslint/forge-lint checks for e.g. unused imports, unused variables, and other code quality issues.
       # lint runs earliest possible, dependencies and forge cli need to be installed first in Dependency NPM-Setup
       - name: Lint Spell-Checker
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: npm run lint
 
       # security scan = finds security vulnerabilities
