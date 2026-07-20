@@ -53,6 +53,9 @@ jobs:
 
       - name: Forge CLI Setup # required because npm run lint uses forge lint
         run: npm install --global @forge/cli
+      # Forge CLI non-interactive analytics setting is required because npm run lint uses forge lint
+      - name: Forge CLI non-interactive analytics setting
+        run: forge settings set usage-analytics true
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
       # lint = code quality checker that scans your code without running it (like a spell-checker in Word)
@@ -87,6 +90,9 @@ jobs:
 
       - name: Forge CLI Setup
         run: npm install --global @forge/cli
+
+      - name: Forge CLI non-interactive analytics setting
+        run: forge settings set usage-analytics true
 
       - name: Deploy gadget to Atlassian production
         env:
