@@ -65,7 +65,12 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: npm run lint
+        run: |
+          if [ -n "$FORGE_EMAIL" ] && [ -n "$FORGE_API_TOKEN" ]; then
+            npm run lint
+          else
+            echo "Skipping forge lint: FORGE_EMAIL and/or FORGE_API_TOKEN secret is not set."
+          fi
 
       # security scan = finds security vulnerabilities
       - name: NPM Security Scan
