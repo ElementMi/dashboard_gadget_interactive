@@ -19,7 +19,7 @@ Why this matters:
 - Backend api.asApp access avoids that viewer-permission trap for shared internal dashboards.
 
 Current flow:
-- Frontend UI (src/frontend/main.jsx)
+- Frontend UI (src/frontend/index.html + src/frontend/main.jsx + src/frontend/styles.css)
 - invoke('loadGadgetData')
 - Backend resolver (src/backend/index.js)
 - Jira REST calls via api.asApp()
@@ -27,8 +27,11 @@ Current flow:
 ## Project Structure
 
 - manifest.yml
+- src/frontend/index.html
 - src/frontend/main.jsx
+- src/frontend/styles.css
 - src/backend/index.js
+- vite.config.js
 - package.json
 
 ## Prerequisites
@@ -49,6 +52,7 @@ npm install
 - npm run deploy
 - npm run install-app
 - npm run tunnel
+- npm run build:frontend
 
 ## Validate App
 

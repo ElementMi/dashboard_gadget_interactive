@@ -7,7 +7,6 @@ modules:
       resolver:
         function: gadget-resolver
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
-      render: native
       refreshable: true
 
   function:
@@ -16,7 +15,7 @@ modules:
 
 resources:
   - key: main
-    path: src/frontend/main.jsx
+    path: dist/frontend
 
 permissions:
   scopes:
