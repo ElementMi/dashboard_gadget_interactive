@@ -149,6 +149,7 @@ resolver.define('loadGadgetData', async ({ payload }) => {
   const fieldsToRequest = [
     'created',
     'updated',
+    'resolutiondate',
     'summary',
     'project',
     'assignee',

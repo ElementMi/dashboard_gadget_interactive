@@ -19,7 +19,6 @@ const intervalOptions = [
 
 const IMPACT_FIELD_NAMES = ['impact (migrated 2)[dropdown]', 'Impact (migrated 2)[dropdown]', 'impact', 'Impact'];
 const ORGANIZATION_FIELD_NAMES = ['organization', 'Organisation', 'Organizations', 'Organisationen'];
-const REACTION_FIELD_NAMES = ['Reaktionszeit', 'Reaktionzeit', 'Reaktionszeit (SLA)', 'Time to first response', 'First response time'];
 
 const BERLIN_TIMEZONE = 'Europe/Berlin';
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -399,6 +398,17 @@ function toDisplayValue(value) {
   return String(value);
 }
 
+function formatDeltaFromMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '-';
+
+  const totalMinutes = Math.floor(ms / (60 * 1000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 function toVisibleIssuesWithNames(issues, window, namesMap) {
   const visible = [];
 
@@ -413,7 +423,11 @@ function toVisibleIssuesWithNames(issues, window, namesMap) {
     const fields = issue?.fields ?? {};
     const impactValue = getFieldByNames(fields, namesMap, IMPACT_FIELD_NAMES);
     const organizationValue = getFieldByNames(fields, namesMap, ORGANIZATION_FIELD_NAMES);
-    const reactionValue = getFieldByNames(fields, namesMap, REACTION_FIELD_NAMES);
+    const updatedDate = fields?.updated ? new Date(fields.updated) : null;
+    const closedDate = fields?.resolutiondate ? new Date(fields.resolutiondate) : null;
+    const hasValidUpdated = updatedDate instanceof Date && !Number.isNaN(updatedDate.getTime());
+    const hasValidClosed = closedDate instanceof Date && !Number.isNaN(closedDate.getTime());
+    const deltaMs = hasValidClosed ? closedDate.getTime() - createdDate.getTime() : NaN;
 
     visible.push({
       key: issue.key,
@@ -422,10 +436,11 @@ function toVisibleIssuesWithNames(issues, window, namesMap) {
       assignee: fields?.assignee?.displayName ?? 'Unassigned',
       summary: fields?.summary ?? '(no summary)',
       organization: toDisplayValue(organizationValue),
-      reactionTime: toDisplayValue(reactionValue),
       createdDisplay: createdTableFormatter.format(createdDate),
+      deltaDisplay: formatDeltaFromMs(deltaMs),
       createdRaw: createdDate.toISOString(),
-      updatedDisplay: fields?.updated ? createdTableFormatter.format(new Date(fields.updated)) : '-',
+      updatedDisplay: hasValidUpdated ? createdTableFormatter.format(updatedDate) : '-',
+      closedDisplay: hasValidClosed ? createdTableFormatter.format(closedDate) : '-',
     });
   }
 
@@ -438,6 +453,39 @@ function formatKpi(value) {
 
 function formatKpiOneDecimal(value) {
   return Number.isFinite(value) ? (Math.ceil(value * 10) / 10).toFixed(1) : '0.0';
+}
+
+function getWeeklyDailyAvgClass(value, timeframeDays, interval) {
+  if (!Number.isFinite(value) || timeframeDays !== 28 || interval !== 'day') {
+    return '';
+  }
+
+  if (value < 1.9) return 'kpi-dark-green';
+  if (value >= 2.0 && value <= 3.4) return 'kpi-dark-yellow';
+  if (value >= 3.5) return 'kpi-negative';
+  return '';
+}
+
+function getRegularAvgClass(value, timeframeDays) {
+  if (!Number.isFinite(value)) {
+    return '';
+  }
+
+  if (timeframeDays === 28) {
+    if (value <= 0.2) return 'kpi-green';
+    if (value > 0.2 && value <= 0.4) return 'kpi-dark-green';
+    if (value > 0.4) return 'kpi-negative';
+    return '';
+  }
+
+  if (timeframeDays === 7) {
+    if (value <= 1.0) return 'kpi-dark-green';
+    if (value > 1.0 && value <= 2.4) return 'kpi-dark-yellow';
+    if (value > 2.5) return 'kpi-negative';
+    return '';
+  }
+
+  return '';
 }
 
 function pad2(n) {
@@ -591,7 +639,7 @@ function ChartPanel({ histogram, historicalHistogram, m1Trend, interval, emaLege
       title: {
         text: 'Tickets over time',
         subtext: 'red line = adaptive moving average/ green bar diagram = tickets of timeline chosen/ gray bar diagram = tickets same time last year.\n',
-        textStyle: { fontSize: 13, fontWeight: 700, color: '#000000' },
+        textStyle: { fontSize: 13, fontWeight: 700, color: '#5e6c84' },
         subtextStyle: { fontSize: 12, color: '#42526e' },
       },
       grid: {
@@ -769,6 +817,14 @@ function App() {
     .replace(/^EMA\s*/i, '')
     .replace(/\s*\(HL\/2\)\s*/i, '');
   const avgWindowSuffix = timeframeDays === 7 ? '[max 7 days completed]' : '[max 28 days completed]';
+  const avg8to17WeeklyNumber = Number.isFinite(data?.kpis?.avg8to17Weekly) ? data.kpis.avg8to17Weekly : null;
+  const avg17to22WeeklyNumber = Number.isFinite(data?.kpis?.avg17to22Weekly) ? data.kpis.avg17to22Weekly : null;
+  const avg22to6WeeklyNumber = Number.isFinite(data?.kpis?.avg22to6Weekly) ? data.kpis.avg22to6Weekly : null;
+  const avg6to8WeeklyNumber = Number.isFinite(data?.kpis?.avg6to8Weekly) ? data.kpis.avg6to8Weekly : null;
+  const avg8to17Number = Number.isFinite(data?.kpis?.avg8to17) ? data.kpis.avg8to17 : null;
+  const avg17to22Number = Number.isFinite(data?.kpis?.avg17to22) ? data.kpis.avg17to22 : null;
+  const avg22to6Number = Number.isFinite(data?.kpis?.avg22to6) ? data.kpis.avg22to6 : null;
+  const avg6to8Number = Number.isFinite(data?.kpis?.avg6to8) ? data.kpis.avg6to8 : null;
   const m1Number = Number.isFinite(data?.kpis?.m1) ? data.kpis.m1 : null;
   const m2Number = Number.isFinite(data?.kpis?.m2) ? data.kpis.m2 : null;
   const emaNumber = Number.isFinite(data?.kpis?.ticketsPerDay) ? data.kpis.ticketsPerDay : null;
@@ -800,6 +856,14 @@ function App() {
           : '';
 
   const bankHolidayValueClass = bankHolidayNumber > 0 ? 'kpi-negative' : '';
+  const avg8to17WeeklyClass = getWeeklyDailyAvgClass(avg8to17WeeklyNumber, timeframeDays, interval);
+  const avg17to22WeeklyClass = getWeeklyDailyAvgClass(avg17to22WeeklyNumber, timeframeDays, interval);
+  const avg22to6WeeklyClass = getWeeklyDailyAvgClass(avg22to6WeeklyNumber, timeframeDays, interval);
+  const avg6to8WeeklyClass = getWeeklyDailyAvgClass(avg6to8WeeklyNumber, timeframeDays, interval);
+  const avg8to17Class = getRegularAvgClass(avg8to17Number, timeframeDays);
+  const avg17to22Class = getRegularAvgClass(avg17to22Number, timeframeDays);
+  const avg22to6Class = getRegularAvgClass(avg22to6Number, timeframeDays);
+  const avg6to8Class = getRegularAvgClass(avg6to8Number, timeframeDays);
   const totalPages = Math.max(1, Math.ceil(totalTickets / rowsPerPage));
   const safePage = Math.min(tablePage, totalPages);
   const pageStart = (safePage - 1) * rowsPerPage;
@@ -916,17 +980,17 @@ function App() {
           </div>
           {timeframeDays === 28 ? (
             <div className="cards kpi-row">
-              <div className="card"><div className="title">Avg Mo - Fri 08:00-17:00 (excl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg8to17Weekly)}</div></div>
-              <div className="card"><div className="title">Avg Mo - Sun 17:00-22:00 (incl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg17to22Weekly)}</div></div>
-              <div className="card"><div className="title">Avg Mo - Sun 22:00-06:00 (incl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg22to6Weekly)}</div></div>
-              <div className="card"><div className="title">Avg Mo - Sun 06:00-08:00 (incl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg6to8Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Fri 08:00-17:00 (excl. holidays) [avg/weekly completed days]</div><div className={`value ${avg8to17WeeklyClass}`}>{formatKpiOneDecimal(data?.kpis?.avg8to17Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Sun 17:00-22:00 (incl. holidays) [avg/weekly completed days]</div><div className={`value ${avg17to22WeeklyClass}`}>{formatKpiOneDecimal(data?.kpis?.avg17to22Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Sun 22:00-06:00 (incl. holidays) [avg/weekly completed days]</div><div className={`value ${avg22to6WeeklyClass}`}>{formatKpiOneDecimal(data?.kpis?.avg22to6Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Sun 06:00-08:00 (incl. holidays) [avg/weekly completed days]</div><div className={`value ${avg6to8WeeklyClass}`}>{formatKpiOneDecimal(data?.kpis?.avg6to8Weekly)}</div></div>
             </div>
           ) : null}
           <div className="cards kpi-row">
-            <div className="card"><div className="title">{`Avg Mo - Fri 08:00-17:00 (excl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg8to17)}</div></div>
-            <div className="card"><div className="title">{`Avg Mo - Sun 17:00-22:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg17to22)}</div></div>
-            <div className="card"><div className="title">{`Avg Mo - Sun 22:00-06:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg22to6)}</div></div>
-            <div className="card"><div className="title">{`Avg Mo - Sun 06:00-08:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg6to8)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Fri 08:00-17:00 (excl. holidays) ${avgWindowSuffix}`}</div><div className={`value ${avg8to17Class}`}>{formatKpiOneDecimal(data?.kpis?.avg8to17)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Sun 17:00-22:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className={`value ${avg17to22Class}`}>{formatKpiOneDecimal(data?.kpis?.avg17to22)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Sun 22:00-06:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className={`value ${avg22to6Class}`}>{formatKpiOneDecimal(data?.kpis?.avg22to6)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Sun 06:00-08:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className={`value ${avg6to8Class}`}>{formatKpiOneDecimal(data?.kpis?.avg6to8)}</div></div>
           </div>
         </div>
       </div>
@@ -953,9 +1017,10 @@ function App() {
                 <th>Assignee</th>
                 <th>Summary</th>
                 <th>Organization</th>
-                <th>Reaktionszeit</th>
                 <th>Created (Berlin)</th>
+                <th>Delta</th>
                 <th>Updated (Berlin)</th>
+                <th>Closed (Berlin)</th>
               </tr>
             </thead>
             <tbody>
@@ -968,14 +1033,15 @@ function App() {
                     <td>{ticket.assignee}</td>
                     <td>{ticket.summary}</td>
                     <td>{ticket.organization}</td>
-                    <td>{ticket.reactionTime}</td>
                     <td>{ticket.createdDisplay}</td>
+                    <td>{ticket.deltaDisplay}</td>
                     <td>{ticket.updatedDisplay}</td>
+                    <td>{ticket.closedDisplay}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="small">No tickets for the current foreground filter and timeline.</td>
+                  <td colSpan={10} className="small">No tickets for the current foreground filter and timeline.</td>
                 </tr>
               )}
             </tbody>

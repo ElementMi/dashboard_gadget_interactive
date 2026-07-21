@@ -41,7 +41,7 @@ body {
 label {
   font-size: 13px;
   font-weight: 700;
-  color: #000;
+  color: #5e6c84;
 }
 
 textarea,
@@ -119,7 +119,7 @@ button:disabled {
 }
 
 .section-heading {
-  color: #000;
+  color: #5e6c84;
   font-size: 13px;
   font-weight: 700;
 }
@@ -153,7 +153,8 @@ button:disabled {
 }
 
 .card .value {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 700;
   margin-top: 4px;
 }
 
@@ -162,7 +163,19 @@ button:disabled {
 }
 
 .card .value.kpi-positive {
-  color: #2f7d67;
+  color: #5aa66a;
+}
+
+.card .value.kpi-green {
+  color: #5aa66a;
+}
+
+.card .value.kpi-dark-green {
+  color: #5aa66a;
+}
+
+.card .value.kpi-dark-yellow {
+  color: #cca600;
 }
 
 .card .value.kpi-negative {
