@@ -1,12 +1,14 @@
 :root {
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif;
+  font-style: normal;
 }
 
 body {
   margin: 0;
   background: #fff;
   color: #172b4d;
+  font-style: normal;
 }
 
 .shell {
@@ -37,8 +39,9 @@ body {
 }
 
 label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  color: #000;
 }
 
 textarea,
@@ -49,11 +52,24 @@ button {
 
 textarea {
   width: 100%;
-  min-height: clamp(57px, 8vh, 90px);
+  min-height: clamp(28px, 4vh, 45px);
   padding: 8px;
   border: 1px solid #dfe1e6;
   border-radius: 6px;
   resize: none;
+  color: #6b778c;
+}
+
+textarea::placeholder {
+  color: #6b778c;
+  opacity: 1;
+}
+
+textarea:focus,
+textarea:focus-visible {
+  outline: none;
+  border-color: #dfe1e6;
+  box-shadow: none;
 }
 
 select {
@@ -96,6 +112,28 @@ button:disabled {
   font-size: 12px;
 }
 
+.kpi-heading {
+  color: #2f7d67;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.section-heading {
+  color: #000;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.kpi-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kpi-row {
+  margin: 0;
+}
+
 .cards {
   display: flex;
   flex-wrap: wrap;
@@ -120,6 +158,14 @@ button:disabled {
 }
 
 .card .danger {
+  color: #d14343;
+}
+
+.card .value.kpi-positive {
+  color: #2f7d67;
+}
+
+.card .value.kpi-negative {
   color: #d14343;
 }
 

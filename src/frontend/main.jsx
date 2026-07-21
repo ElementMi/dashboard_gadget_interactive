@@ -8,7 +8,7 @@ const STATIC_TIMELINE_JQL = 'project = SUP AND summary ~ "Sprachnachricht von" O
 
 const timeframeOptions = [
   { label: 'Last 7 days', value: 7 },
-  { label: 'Last 30 days', value: 30 },
+  { label: 'Last 28 days', value: 28 },
 ];
 
 const intervalOptions = [
@@ -127,9 +127,22 @@ function getBerlinWeekWindow(now = new Date()) {
   return { start, end };
 }
 
+function getBerlinFourWeekWindow(now = new Date()) {
+  const weekWindow = getBerlinWeekWindow(now);
+
+  return {
+    start: new Date(weekWindow.start.getTime() - 21 * MS_PER_DAY),
+    end: weekWindow.end,
+  };
+}
+
 function getWindowForTimeframe(timeframeDays) {
   if (timeframeDays === 7) {
     return getBerlinWeekWindow();
+  }
+
+  if (timeframeDays === 28) {
+    return getBerlinFourWeekWindow();
   }
 
   const end = new Date();
@@ -263,7 +276,7 @@ function toTimeHistogram(issues, interval, window) {
 }
 
 function getM1TrendLength(timeframeDays, interval) {
-  if (timeframeDays === 30) {
+  if (timeframeDays === 28) {
     if (interval === 'day') return 7;
     if (interval === 'hour') return 24;
     if (interval === 'week') return 1;
@@ -279,7 +292,7 @@ function getM1TrendLength(timeframeDays, interval) {
   return 0;
 }
 
-function toM1EmaSeries(histogram, timeframeDays, interval) {
+function toM1EmaSeries(histogram, timeframeDays, interval, source = 'hl2') {
   const length = getM1TrendLength(timeframeDays, interval);
   if (!length) return { length: 0, data: [], latest: null };
 
@@ -291,17 +304,20 @@ function toM1EmaSeries(histogram, timeframeDays, interval) {
 
   for (let i = 0; i < (histogram?.length ?? 0); i += 1) {
     const current = histogram[i];
-    const hl2 = Number(current?.tickets ?? 0) / 2;
-    rollingSum += hl2;
+    const currentTickets = Number(current?.tickets ?? 0);
+    const currentValue = source === 'close' ? currentTickets : currentTickets / 2;
+    rollingSum += currentValue;
 
     if (i >= length) {
-      rollingSum -= Number(histogram[i - length]?.tickets ?? 0) / 2;
+      const previousTickets = Number(histogram[i - length]?.tickets ?? 0);
+      const previousValue = source === 'close' ? previousTickets : previousTickets / 2;
+      rollingSum -= previousValue;
     }
 
     if (i === length - 1) {
       emaValue = rollingSum / length;
     } else if (i >= length) {
-      emaValue = hl2 * alpha + emaValue * (1 - alpha);
+      emaValue = currentValue * alpha + emaValue * (1 - alpha);
     }
 
     points.push({
@@ -319,6 +335,20 @@ function toM1EmaSeries(histogram, timeframeDays, interval) {
     data: points.filter((point) => Number.isFinite(point.m1)),
     latest: latestPoint?.m1 ?? null,
   };
+}
+
+function buildEmaLegendLabel(interval, length) {
+  if (!length) {
+    return 'EMA (HL/2)';
+  }
+
+  const unit = interval === 'hour'
+    ? (length === 1 ? 'Hour' : 'Hours')
+    : interval === 'day'
+      ? (length === 1 ? 'Day' : 'Days')
+      : (length === 1 ? 'Week' : 'Weeks');
+
+  return `EMA ${length}${unit} (HL/2)`;
 }
 
 function normalizeLabel(value) {
@@ -403,75 +433,145 @@ function toVisibleIssuesWithNames(issues, window, namesMap) {
 }
 
 function formatKpi(value) {
-  return Number.isFinite(value) ? value.toFixed(2) : '0.00';
+  return Number.isFinite(value) ? (Math.ceil(value * 100) / 100).toFixed(2) : '0.00';
+}
+
+function formatKpiOneDecimal(value) {
+  return Number.isFinite(value) ? (Math.ceil(value * 10) / 10).toFixed(1) : '0.0';
 }
 
 function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
-function countBankHolidaysInWindow(window) {
+function getWindowDayStats(window) {
   const startLocal = getTzParts(window.start, BERLIN_TIMEZONE);
   const endLocal = getTzParts(new Date(window.end.getTime() - 1), BERLIN_TIMEZONE);
 
   let cursorUtc = Date.UTC(startLocal.year, startLocal.month - 1, startLocal.day);
   const endUtc = Date.UTC(endLocal.year, endLocal.month - 1, endLocal.day);
-  let count = 0;
+  let totalDays = 0;
+  let weekdayExcludingHolidays = 0;
+  let bankHolidays = 0;
 
   while (cursorUtc <= endUtc) {
     const cursorDate = new Date(cursorUtc);
     const key = `${pad2(cursorDate.getUTCDate())}.${pad2(cursorDate.getUTCMonth() + 1)}`;
-    if (BANK_HOLIDAYS.has(key)) {
-      count += 1;
+    const isHoliday = BANK_HOLIDAYS.has(key);
+    const weekday = cursorDate.getUTCDay();
+    const isWeekday = weekday >= 1 && weekday <= 5;
+
+    totalDays += 1;
+    if (isHoliday) bankHolidays += 1;
+    if (isWeekday && !isHoliday) {
+      weekdayExcludingHolidays += 1;
     }
+
     cursorUtc += MS_PER_DAY;
   }
 
-  return count;
+  return {
+    totalDays,
+    weekdayExcludingHolidays,
+    bankHolidays,
+  };
 }
 
-function computeKpis(tickets, window, m1Value) {
+function getElapsedWindowForAverages(window, now = new Date()) {
+  const berlinNow = getTzParts(now, BERLIN_TIMEZONE);
+  const berlinTodayStart = zonedDateTimeToUtcDate(
+    {
+      year: berlinNow.year,
+      month: berlinNow.month,
+      day: berlinNow.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    BERLIN_TIMEZONE
+  );
+
+  const end = new Date(Math.min(window.end.getTime(), berlinTodayStart.getTime()));
+  if (end <= window.start) {
+    return { start: window.start, end: window.start };
+  }
+
+  return {
+    start: window.start,
+    end,
+  };
+}
+
+function getAverageDenominatorWindow(window, timeframeDays) {
+  if (timeframeDays === 7) {
+    return getElapsedWindowForAverages(window);
+  }
+
+  if (timeframeDays === 28) {
+    return getElapsedWindowForAverages(window);
+  }
+
+  return window;
+}
+
+function computeKpis(tickets, window, historicalTotal, emaTicketsPerDayValue, timeframeDays) {
+  const fullDayStats = getWindowDayStats(window);
+  const denominatorWindow = getAverageDenominatorWindow(window, timeframeDays);
+  const denominatorStats = getWindowDayStats(denominatorWindow);
+  const allDays = Math.max(1, denominatorStats.totalDays);
+  const businessDaysExcludingHolidays = Math.max(1, denominatorStats.weekdayExcludingHolidays);
   const total = tickets?.length ?? 0;
-  const daysInWindow = Math.max(1, (window.end.getTime() - window.start.getTime()) / MS_PER_DAY);
-  const avgPerDay = total / daysInWindow;
+  const avgPerDay = total / allDays;
+  const historicalAvgPerDay = Number(historicalTotal ?? 0) / allDays;
 
   let band8to17 = 0;
   let band17to22 = 0;
   let band22to6 = 0;
   let band6to8 = 0;
-  let m2 = 0;
 
   for (const ticket of tickets ?? []) {
     const createdDate = new Date(ticket.createdRaw);
     if (Number.isNaN(createdDate.getTime())) continue;
 
+    // For elapsed-window views, ignore tickets created on days that are not completed yet.
+    if (createdDate < denominatorWindow.start || createdDate >= denominatorWindow.end) continue;
+
     const berlinParts = getTzParts(createdDate, BERLIN_TIMEZONE);
     const hour = berlinParts.hour;
+    const weekday = weekdayMap[berlinParts.weekday] ?? 0;
+    const isWeekday = weekday >= 1 && weekday <= 5;
+    const dayMonthKey = `${pad2(berlinParts.day)}.${pad2(berlinParts.month)}`;
+    const isHoliday = BANK_HOLIDAYS.has(dayMonthKey);
 
-    if (hour >= 8 && hour < 17) band8to17 += 1;
+    if (hour >= 8 && hour < 17) {
+      // Business-hours KPI excludes weekends and holidays in both numerator and denominator.
+      if (isWeekday && !isHoliday) {
+        band8to17 += 1;
+      }
+    }
     else if (hour >= 17 && hour < 22) band17to22 += 1;
     else if (hour >= 22 || hour < 6) band22to6 += 1;
     else band6to8 += 1;
 
-    const impact = (ticket.impact ?? '').toLowerCase();
-    if (impact.includes('schwere störung') || impact.includes('severe disruption')) {
-      m2 += 1;
-    }
   }
 
   return {
-    m1: Number.isFinite(m1Value) ? formatKpi(m1Value) : 'N/A',
-    m2,
-    bankHolidays: countBankHolidaysInWindow(window),
-    ticketsPerDay: formatKpi(avgPerDay),
-    avg8to17: formatKpi(band8to17 / daysInWindow),
-    avg17to22: formatKpi(band17to22 / daysInWindow),
-    avg22to6: formatKpi(band22to6 / daysInWindow),
-    avg6to8: formatKpi(band6to8 / daysInWindow),
+    m1: avgPerDay,
+    m2: historicalAvgPerDay,
+    bankHolidays: fullDayStats.bankHolidays,
+    ticketsPerDay: Number.isFinite(emaTicketsPerDayValue) ? emaTicketsPerDayValue : null,
+    avg8to17: band8to17 / businessDaysExcludingHolidays,
+    avg17to22: band17to22 / allDays,
+    avg22to6: band22to6 / allDays,
+    avg6to8: band6to8 / allDays,
+    avg8to17Weekly: (band8to17 / businessDaysExcludingHolidays) * 5,
+    avg17to22Weekly: (band17to22 / allDays) * 7,
+    avg22to6Weekly: (band22to6 / allDays) * 7,
+    avg6to8Weekly: (band6to8 / allDays) * 7,
   };
 }
 
-function ChartPanel({ histogram, historicalHistogram, m1Trend, interval }) {
+function ChartPanel({ histogram, historicalHistogram, m1Trend, interval, emaLegendLabel }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -490,12 +590,9 @@ function ChartPanel({ histogram, historicalHistogram, m1Trend, interval }) {
       animation: false,
       title: {
         text: 'Tickets over time',
-        subtext:
-          (m1Trend?.length ?? 0) > 0
-            ? 'Green bars = tickets, red line = M1 EMA (HL/2)'
-            : 'X-axis: time, Y-axis: number of tickets',
-        textStyle: { fontSize: 14, fontWeight: 600 },
-        subtextStyle: { fontSize: 11, color: '#42526e' },
+        subtext: 'red line = adaptive moving average/ green bar diagram = tickets of timeline chosen/ gray bar diagram = tickets same time last year.\n',
+        textStyle: { fontSize: 13, fontWeight: 700, color: '#000000' },
+        subtextStyle: { fontSize: 12, color: '#42526e' },
       },
       grid: {
         top: 70,
@@ -521,7 +618,7 @@ function ChartPanel({ histogram, historicalHistogram, m1Trend, interval }) {
       },
       series: [
         {
-          name: 'Tickets',
+          name: 'Tickets (last year)',
           type: 'bar',
           data: historicalTickets,
           barGap: '-100%',
@@ -544,7 +641,7 @@ function ChartPanel({ histogram, historicalHistogram, m1Trend, interval }) {
           emphasis: { focus: 'series' },
         },
         {
-          name: 'M1 EMA (HL/2)',
+          name: emaLegendLabel,
           type: 'line',
           data: (m1Trend?.length ?? 0) > 0 ? m1Data : [],
           smooth: false,
@@ -562,6 +659,7 @@ function ChartPanel({ histogram, historicalHistogram, m1Trend, interval }) {
         },
       ],
       legend: {
+        data: [emaLegendLabel, 'Tickets', 'Tickets (last year)'],
         bottom: 0,
       },
     });
@@ -573,14 +671,14 @@ function ChartPanel({ histogram, historicalHistogram, m1Trend, interval }) {
       window.removeEventListener('resize', onResize);
       chart.dispose();
     };
-  }, [histogram, historicalHistogram, m1Trend, interval]);
+  }, [histogram, historicalHistogram, m1Trend, interval, emaLegendLabel]);
 
   return <div ref={containerRef} className="chart" />;
 }
 
 function App() {
-  const [timeframeDays, setTimeframeDays] = useState(30);
-  const [jqlInput, setJqlInput] = useState('');
+  const [timeframeDays, setTimeframeDays] = useState(28);
+  const [jqlInput, setJqlInput] = useState(DEFAULT_JQL);
   const [appliedJql, setAppliedJql] = useState(DEFAULT_JQL);
   const [interval, setInterval] = useState('day');
   const [tablePage, setTablePage] = useState(1);
@@ -622,11 +720,12 @@ function App() {
 
         const histogram = toTimeHistogram(issues, interval, window);
         const historical = buildHistoricalHistogramFromPreviousYear(historicalIssues, interval, window);
-        const m1Trend = toM1EmaSeries(histogram, timeframeDays, interval);
+        const m1Trend = toM1EmaSeries(histogram, timeframeDays, interval, 'hl2');
+        const emaCloseTrend = toM1EmaSeries(histogram, timeframeDays, interval, 'close');
         const visibleRows = toVisibleIssuesWithNames(visibleIssues, window, namesMap);
         const visibleTotal = histogram.reduce((sum, bucket) => sum + bucket.tickets, 0);
-        const kpis = computeKpis(visibleRows, window, m1Trend.latest);
         const historicalTotal = historical.histogram.reduce((sum, bucket) => sum + Number(bucket.tickets ?? 0), 0);
+        const kpis = computeKpis(visibleRows, window, historicalTotal, emaCloseTrend.latest, timeframeDays);
 
         const result = {
           total: visibleTotal,
@@ -665,6 +764,42 @@ function App() {
   }, [timeframeDays, interval, appliedJql]);
 
   const totalTickets = data?.tickets?.length ?? 0;
+  const emaLegendLabel = buildEmaLegendLabel(interval, data?.m1Trend?.length ?? 0);
+  const emaMetricLabel = emaLegendLabel
+    .replace(/^EMA\s*/i, '')
+    .replace(/\s*\(HL\/2\)\s*/i, '');
+  const avgWindowSuffix = timeframeDays === 7 ? '[max 7 days completed]' : '[max 28 days completed]';
+  const m1Number = Number.isFinite(data?.kpis?.m1) ? data.kpis.m1 : null;
+  const m2Number = Number.isFinite(data?.kpis?.m2) ? data.kpis.m2 : null;
+  const emaNumber = Number.isFinite(data?.kpis?.ticketsPerDay) ? data.kpis.ticketsPerDay : null;
+  const bankHolidayNumber = Number(data?.kpis?.bankHolidays ?? 0);
+
+  const ma1ValueClass =
+    m1Number == null || m2Number == null
+      ? ''
+      : m1Number < m2Number
+        ? 'kpi-positive'
+        : m1Number > m2Number
+          ? 'kpi-negative'
+          : '';
+
+  const ma2ValueClass =
+    m1Number == null || m2Number == null
+      ? ''
+      : m2Number > m1Number
+        ? 'kpi-negative'
+        : 'kpi-positive';
+
+  const emaValueClass =
+    emaNumber == null || m1Number == null
+      ? ''
+      : emaNumber < m1Number
+        ? 'kpi-positive'
+        : emaNumber > m1Number
+          ? 'kpi-negative'
+          : '';
+
+  const bankHolidayValueClass = bankHolidayNumber > 0 ? 'kpi-negative' : '';
   const totalPages = Math.max(1, Math.ceil(totalTickets / rowsPerPage));
   const safePage = Math.min(tablePage, totalPages);
   const pageStart = (safePage - 1) * rowsPerPage;
@@ -703,10 +838,8 @@ function App() {
               id="static-jql-filter"
               value={STATIC_TIMELINE_JQL}
               readOnly
-              disabled={isUpdating}
             />
-            <div className="small">Gray bars show the same timeframe from one year earlier.</div>
-            <div className="small">Historical query rows: {data?.historicalIssueCount ?? 0}, total gray tickets: {Math.round(data?.historicalTotal ?? 0)}</div>
+            <div className="small">Gray bars show the same timeframe from one year earlier. | Historical query rows: {data?.historicalIssueCount ?? 0}, total gray tickets: {Math.round(data?.historicalTotal ?? 0)}</div>
           </div>
         </div>
 
@@ -718,7 +851,7 @@ function App() {
               value={jqlInput}
               placeholder={DEFAULT_JQL}
               onChange={(event) => setJqlInput(event.target.value)}
-              disabled={isUpdating}
+              readOnly={isUpdating}
             />
             <div>
               <button disabled={isUpdating} onClick={() => setAppliedJql(jqlInput)}>
@@ -761,33 +894,45 @@ function App() {
           </div>
         </div>
 
-        <div className="meta">Total issues: {data?.total ?? 0}</div>
+        <div className="small">Total issues: {data?.total ?? 0}</div>
       </div>
 
       <div className="panel">
         {data?.histogram?.length ? (
-          <ChartPanel histogram={data.histogram} historicalHistogram={data.historicalHistogram} m1Trend={data.m1Trend} interval={interval} />
+          <ChartPanel histogram={data.histogram} historicalHistogram={data.historicalHistogram} m1Trend={data.m1Trend} interval={interval} emaLegendLabel={emaLegendLabel} />
         ) : (
           <div className="small">No issues were found for the selected timeframe and bucket settings.</div>
         )}
       </div>
 
       <div className="panel">
-        <div className="meta"><strong>KPI Summary</strong></div>
-        <div className="cards">
-          <div className="card"><div className="title">M1</div><div className="value danger">{data?.kpis?.m1 ?? 'N/A'}</div></div>
-          <div className="card"><div className="title">M2</div><div className="value">{data?.kpis?.m2 ?? 0}</div></div>
-          <div className="card"><div className="title">Tickets / Day</div><div className="value">{data?.kpis?.ticketsPerDay ?? '0.00'}</div></div>
-          <div className="card"><div className="title">Avg 08:00-17:00</div><div className="value">{data?.kpis?.avg8to17 ?? '0.00'}</div></div>
-          <div className="card"><div className="title">Avg 17:00-22:00</div><div className="value">{data?.kpis?.avg17to22 ?? '0.00'}</div></div>
-          <div className="card"><div className="title">Avg 22:00-06:00</div><div className="value">{data?.kpis?.avg22to6 ?? '0.00'}</div></div>
-          <div className="card"><div className="title">Avg 06:00-08:00</div><div className="value">{data?.kpis?.avg6to8 ?? '0.00'}</div></div>
-          <div className="card"><div className="title">Bank holidays</div><div className="value">{data?.kpis?.bankHolidays ?? 0}</div></div>
+        <div className="meta kpi-heading"><strong>KPI Summary</strong></div>
+        <div className="kpi-rows">
+          <div className="cards kpi-row">
+            <div className="card"><div className="title">MA1 - Tickets / Day (This Year)</div><div className={`value ${ma1ValueClass}`}>{formatKpiOneDecimal(data?.kpis?.m1)}</div></div>
+            <div className="card"><div className="title">MA2 - Tickets / Day (Last Year)</div><div className={`value ${ma2ValueClass}`}>{formatKpiOneDecimal(data?.kpis?.m2)}</div></div>
+            <div className="card"><div className="title">{`EMA ${emaMetricLabel} - Tickets / Day`}</div><div className={`value ${emaValueClass}`}>{data?.kpis?.ticketsPerDay == null ? 'N/A' : formatKpi(data.kpis.ticketsPerDay)}</div></div>
+            <div className="card"><div className="title">Bank holidays</div><div className={`value ${bankHolidayValueClass}`}>{data?.kpis?.bankHolidays ?? 0}</div></div>
+          </div>
+          {timeframeDays === 28 ? (
+            <div className="cards kpi-row">
+              <div className="card"><div className="title">Avg Mo - Fri 08:00-17:00 (excl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg8to17Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Sun 17:00-22:00 (incl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg17to22Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Sun 22:00-06:00 (incl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg22to6Weekly)}</div></div>
+              <div className="card"><div className="title">Avg Mo - Sun 06:00-08:00 (incl. holidays) [avg/weekly completed days]</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg6to8Weekly)}</div></div>
+            </div>
+          ) : null}
+          <div className="cards kpi-row">
+            <div className="card"><div className="title">{`Avg Mo - Fri 08:00-17:00 (excl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg8to17)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Sun 17:00-22:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg17to22)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Sun 22:00-06:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg22to6)}</div></div>
+            <div className="card"><div className="title">{`Avg Mo - Sun 06:00-08:00 (incl. holidays) ${avgWindowSuffix}`}</div><div className="value">{formatKpiOneDecimal(data?.kpis?.avg6to8)}</div></div>
+          </div>
         </div>
       </div>
 
       <div className="panel">
-        <div className="meta"><strong>Tickets Table</strong></div>
+        <div className="meta section-heading"><strong>Tickets Table</strong></div>
         <div className="row table-pager-row">
           <div className="small">
             Showing {totalTickets ? pageStart + 1 : 0}-{Math.min(pageEnd, totalTickets)} of {totalTickets}
