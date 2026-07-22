@@ -49,8 +49,79 @@ function toNamesMapFromFields(fieldDefinitions) {
   return namesMap;
 }
 
+function stripOrderByClause(jql) {
+  return (jql ?? '').replace(/\s+order\s+by\b[\s\S]*$/i, '').trim();
+}
+
+function buildWindowScopedJql(searchJql, windowStart, windowEnd) {
+  const base = stripOrderByClause(searchJql);
+  return `(${base}) AND created >= "${windowStart}" AND created < "${windowEnd}" ORDER BY created DESC`;
+}
+
+async function loadAllIssues(searchJql, fieldsToRequest, maxPages = 25) {
+  const issues = [];
+  const pageSize = 500;
+  let nextPageToken = null;
+  let safetyCounter = 0;
+  const seenTokens = new Set();
+
+  do {
+    const requestBody = {
+      jql: searchJql,
+      maxResults: pageSize,
+      fields: fieldsToRequest,
+    };
+
+    if (nextPageToken) {
+      requestBody.nextPageToken = nextPageToken;
+    }
+
+    const searchResponse = await api.asApp().requestJira(route`/rest/api/3/search/jql`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!searchResponse.ok) {
+      const searchError = await searchResponse.text();
+      throw new Error(`Jira search failed (${searchResponse.status}): ${searchError}`);
+    }
+
+    const searchJson = await searchResponse.json();
+    const pageIssues = searchJson.issues ?? [];
+    issues.push(...pageIssues);
+
+    const candidateToken = searchJson.nextPageToken ?? null;
+
+    // Stop if Jira returns an already-seen token to avoid endless pagination loops.
+    if (candidateToken && seenTokens.has(candidateToken)) {
+      nextPageToken = null;
+    } else {
+      nextPageToken = candidateToken;
+      if (nextPageToken) {
+        seenTokens.add(nextPageToken);
+      }
+    }
+
+    // No results means there is nothing left to fetch even if a token is present.
+    if (!pageIssues.length) {
+      nextPageToken = null;
+    }
+
+    safetyCounter += 1;
+  } while (nextPageToken && safetyCounter < maxPages);
+
+  return issues;
+}
+
 resolver.define('loadGadgetData', async ({ payload }) => {
   const searchJql = payload?.searchJql;
+  const historicalJql = payload?.historicalJql;
+  const windowStart = payload?.windowStart;
+  const windowEnd = payload?.windowEnd;
 
   if (!searchJql) {
     throw new Error('Missing search JQL.');
@@ -78,6 +149,7 @@ resolver.define('loadGadgetData', async ({ payload }) => {
   const fieldsToRequest = [
     'created',
     'updated',
+    'resolutiondate',
     'summary',
     'project',
     'assignee',
@@ -93,28 +165,24 @@ resolver.define('loadGadgetData', async ({ payload }) => {
     fieldsToRequest.push(reactionFieldId);
   }
 
-  const searchResponse = await api.asApp().requestJira(route`/rest/api/3/search/jql`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      jql: searchJql,
-      maxResults: 2000,
-      fields: fieldsToRequest,
-    }),
-  });
-
-  if (!searchResponse.ok) {
-    const searchError = await searchResponse.text();
-    throw new Error(`Jira search failed (${searchResponse.status}): ${searchError}`);
+  // Backward compatibility: older frontend builds call without timeframe window.
+  // In that case, return the legacy full issue list in `issues`.
+  if (!windowStart || !windowEnd) {
+    return {
+      issues: await loadAllIssues(searchJql, fieldsToRequest, 10),
+      historicalIssues: [],
+      visibleIssues: [],
+      namesMap,
+    };
   }
 
-  const searchJson = await searchResponse.json();
+  const visibleWindowJql = buildWindowScopedJql(searchJql, windowStart, windowEnd);
+  const historicalQuery = (historicalJql ?? '').trim();
 
   return {
-    issues: searchJson.issues ?? [],
+    issues: await loadAllIssues(searchJql, ['created'], 25),
+    historicalIssues: historicalQuery ? await loadAllIssues(historicalQuery, ['created'], 10) : [],
+    visibleIssues: await loadAllIssues(visibleWindowJql, fieldsToRequest, 10),
     namesMap,
   };
 });
