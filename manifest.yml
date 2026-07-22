@@ -3,7 +3,7 @@ modules:
     - key: sup-ticket-histogram
       title: SUP Ticket Histogram
       description: Sup-Logistik histogram amount of tickets per chosen timeframe
-      resource: main
+      resource: main-v2
       resolver:
         function: gadget-resolver
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
@@ -14,7 +14,7 @@ modules:
       handler: backend/index.handler
 
 resources:
-  - key: main
+  - key: main-v2
     path: dist/frontend
 
 permissions:

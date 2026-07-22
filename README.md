@@ -128,6 +128,15 @@ Notes:
 - Connected apps UI can be flaky/intermittent.
 - Use Forge CLI as source of truth for install/deploy state.
 
+### 4) Gadget frame renders but stays blank
+
+Likely cause:
+- Frontend build emitted absolute asset URLs (`/assets/...`) that do not resolve correctly in Forge-hosted gadget iframes.
+
+Fix:
+- Keep `base: './'` in [vite.config.js](vite.config.js) so build output uses relative asset URLs (`./assets/...`).
+- Rebuild and redeploy after changing Vite config.
+
 ## Useful Commands
 
 - forge whoami
