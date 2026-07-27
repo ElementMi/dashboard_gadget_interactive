@@ -1,152 +1,78 @@
-# SUP Service Histogram (Forge Jira Dashboard Gadget)
+## SUP Service Histogram
+Custom gadget for Jira dashboards that visualizes ticket-volume over time, with KPIs metrics and a ticket-table.
 
-Custom Forge gadget for Jira dashboards that visualizes SUP ticket volume over time, with KPI cards and a ticket table.
-
-## What This App Does
-
-- Adds a Jira dashboard gadget called SUP Ticket Histogram.
-- Queries Jira issues and builds histogram views (hour/day/week buckets).
-- Supports a configurable foreground JQL filter.
-- Shows KPI summary metrics and a detailed ticket table.
-
-## Important Architecture Note
-
-This app uses a backend Forge resolver for Jira API access.
-
-Why this matters:
-- Frontend requestJira calls run as the current viewer.
-- Some users/admins may see an empty or failed gadget if they do not have required project permissions.
-- Backend api.asApp access avoids that viewer-permission trap for shared internal dashboards.
-
-Current flow:
-- Frontend UI (src/frontend/index.html + src/frontend/main.jsx + src/frontend/styles.css)
-- invoke('loadGadgetData')
-- Backend resolver (src/backend/index.js)
-- Jira REST calls via api.asApp()
-
-## Project Structure
-
-- manifest.yml
-- src/frontend/index.html
-- src/frontend/main.jsx
-- src/frontend/styles.css
-- src/backend/index.js
-- vite.config.js
-- package.json
+## Structure
+`manifest.yml`  
+`src/frontend/index.html`  
+`src/frontend/main.jsx`  
+`src/frontend/styles.css`  
+`src/backend/index.js`  
+`vite.config.js`  
+`package.json`  
 
 ## Prerequisites
+`Node.js 22.x or 24.x recommended by Forge CLI`  
+`Forge CLI installed and authenticated`  
+`Jira site admin access for app installation`  
 
-- Node.js 22.x or 24.x recommended by Forge CLI.
-- Forge CLI installed and authenticated.
-- Jira site admin access for app installation.
+## Dependencies
+`npm install` - Run in project root
 
-## Install Dependencies
+## Configuration
+1. Run `forge lint --verbose` to validate the app  
+2. Run `forge deploy -e production` to deploy to production  
+3. Run `forge install -e production` to install on your Jira site  
+4. Verify with `forge install list -e production` — status should be **Up-to-date**  
+5. Open your Jira Dashboard → **Add gadget** → search for **SUP Ticket Histogram**  
 
-Run in project root:
+## Mathematics
+### Time Histogram (Bucketing)
+The chart groups tickets into time slots called time bucket (hourly, daily, or weekly). Each ticket is placed into a bucket based on its creation timestamp:
 
-npm install
+$$\text{bucketIndex} = \left\lfloor \frac{t_{\text{created}} - t_{\text{start}}}{\text{stepMs}} \right\rfloor$$
 
-## NPM Scripts
+Bucket sizes: 1 hour = 3,600,000 ms · 1 day = 86,400,000 ms · 1 week = 604,800,000 ms
 
-- npm run lint
-- npm run deploy
-- npm run install-app
-- npm run tunnel
-- npm run build:frontend
+---
 
-## Validate App
+### EMA — Exponential Moving Average (HL/2)
+The trend line shows averaging recent ticket counts. Newer buckets have more influence than older ones.  
+HL/2 means we use half the ticket count per bucket as input, which keeps the trend line scaled within the bars.
 
-forge lint --verbose
+Initially average the first $n$ buckets (where $n$ is the EMA length, e.g. 24 hours or 7 days)
 
-## Deploy
+For each new bucket blend the current value with the previous EMA using a weighted mix:
+- Newer data gets weight $\alpha = \frac{2}{n + 1}$
+- Previous EMA gets weight $1 - \alpha$
 
-Standard command:
+**Recurrence formula:**
+$$\text{EMA}_i = \text{value}_i \times \alpha + \text{EMA}_{i-1} \times (1 - \alpha)$$
 
-forge deploy -e production
+---
 
-## Install On Jira Site
+### Time Windows
+The gadget always shows a full reporting week (Mon 08:00 → next Mon 08:00 Berlin time), or the last 4 such weeks. The grey comparison line shows the same period from one year ago.
 
-Install to production Jira site:
+**7-day window**, anchored to Monday 08:00 Berlin time of the current reporting week.  
+**28-day window**, current week + 3 prior weeks (same Monday anchor − 21 days).  
+**Historical comparison**, the same window shifted back exactly 1 year, used to overlay previous-year ticket volume.  
 
-forge install -e production
+All timestamps are converted to/from UTC with iterative DST correction to ensure accurate Berlin wall-clock alignment.
 
-Then choose:
-- Atlassian app: Jira
-- Site URL: your company Jira site
-- Confirm scopes when prompted
+## Third-Party Dependencies
+`@forge/api` ^5.1.0 — Forge backend API  
+`@forge/bridge` ^4.5.0 — Frontend-to-backend communication  
+`@forge/resolver` ^1.7.0 — Forge function resolver  
+`echarts` ^5.5.1 — Chart library for visualizations  
+`react` ^18.3.1 — UI framework  
+`react-dom` ^18.3.1 — React DOM rendering  
+`vite` ^5.4.10 — Frontend build tool  
 
-Check installation state:
+## Contributing
+Thank you for your interest and using this gadget. Also, thank you for the contributions & help along the way building this gadget.
 
-forge install list -e production
-
-Expected status should be Up-to-date.
-
-## Internal Distribution (Company Only)
-
-Use Forge sharing via Developer Console Distribution page.
-
-Recommended for internal-only rollout:
-- Use sharing link only for internal admins.
-- Do not list on Marketplace.
-- Do not enable licensing for this internal app.
-- If link leaks, generate a new installation link immediately.
-
-## Add Gadget In Jira
-
-After installation:
-- Open Jira Dashboard.
-- Click Add gadget.
-- Search for SUP Ticket Histogram.
-- Add to dashboard.
-
-If users still see stale behavior, remove the gadget instance and add it again.
-
-## Troubleshooting
-
-### 1) Gadget visible but content not loading
-
-Likely cause:
-- Viewer-scoped Jira API access denied.
-
-Fix:
-- Ensure app is deployed with backend resolver + api.asApp() (already implemented).
-- Re-add gadget instance after deployment.
-
-### 2) Install says already installed, but gadget not available
-
-Likely cause:
-- Old major version installed.
-
-Fix:
-- Check installed app version.
-- Upgrade or reinstall app on site.
-- Confirm production install with forge install list -e production.
-
-### 3) Atlassian Admin page shows intermittent Something went wrong
-
-Notes:
-- Connected apps UI can be flaky/intermittent.
-- Use Forge CLI as source of truth for install/deploy state.
-
-### 4) Gadget frame renders but stays blank
-
-Likely cause:
-- Frontend build emitted absolute asset URLs (`/assets/...`) that do not resolve correctly in Forge-hosted gadget iframes.
-
-Fix:
-- Keep `base: './'` in [vite.config.js](vite.config.js) so build output uses relative asset URLs (`./assets/...`).
-- Rebuild and redeploy after changing Vite config.
-
-## Useful Commands
-
-- forge whoami
-- forge version list -e production
-- forge version details -e production --major-version 2
-- forge install list -e production
-- forge logs -e production -n 50
-
-## Security and Access
-
-This app is intended for internal company use on your Jira cloud site.
-
-Never share installation links publicly.
+## Security, License & Ownership
+This app is intended for internal Sup-Logistik company use on your Jira cloud site, only!  
+Use Forge sharing via Developer Console Distribution page. Internal Distribution (Internal only). Never share installation links publicly.  
+Do not list on Marketplace. Do not enable licensing for this internal app.  
+Should the link leak, generate a new installation link immediately.  
