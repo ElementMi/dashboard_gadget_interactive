@@ -27,7 +27,7 @@ Custom gadget for Jira dashboards that visualizes ticket-volume over time, with 
 ---
 ---
 <h2 style="color: #333333;">Mathematics</h2>
-<h2 style="color: #6B7280;">Time Histogram & Bucketing</h2>
+## Time Histogram & Bucketing
 The chart groups tickets into time slots called time bucket (hourly, daily, or weekly). Each ticket is placed into a bucket based on its creation timestamp:
 
 $$\text{bucketIndex} = \left\lfloor \frac{t_{\text{created}} - t_{\text{start}}}{\text{stepMs}} \right\rfloor$$
@@ -154,19 +154,19 @@ The KPI cards use color coding based on **timeline selection** and **metric type
 ---
 
 <h2 style="color: #333333;">Third-Party Dependencies</h2>
-`@forge/api` ^5.1.0 — Forge backend API  
-`@forge/bridge` ^4.5.0 — Frontend-to-backend communication  
-`@forge/resolver` ^1.7.0 — Forge function resolver  
-`echarts` ^5.5.1 — Chart library for visualizations  
-`react` ^18.3.1 — UI framework  
-`react-dom` ^18.3.1 — React DOM rendering  
-`vite` ^5.4.10 — Frontend build tool  
+`@forge/api` - ^5.1.0 — Forge backend API<br>    
+`@forge/bridge` - ^4.5.0 — Frontend-to-backend communication<br>  
+`@forge/resolver` - ^1.7.0 — Forge function resolver<br>  
+`echarts` - ^5.5.1 — Chart library for visualizations<br>  
+`react` - ^18.3.1 — UI framework<br>  
+`react-dom` - ^18.3.1 — React DOM rendering<br>  
+`vite` - ^5.4.10 — Frontend build tool  
 
 <h2 style="color: #333333;">Contributing</h2>
 Thank you for your interest and using this gadget. Also, thank you for the contributions & help along the way building this gadget.
 
 <h2 style="color: #333333;">Security, License & Ownership</h2>
-This app is intended for internal Sup-Logistik company use on your Jira cloud site, only!  
-Use Forge sharing via Developer Console Distribution page. Internal Distribution (Internal only). Never share installation links publicly.  
-Do not list on Marketplace. Do not enable licensing for this internal app.  
+This app is intended for internal Sup-Logistik company use on your Jira cloud site, only!<br>  
+Use Forge sharing via Developer Console Distribution page. Internal Distribution (Internal only). Never share installation links publicly.<br>  
+Do not list on Marketplace. Do not enable licensing for this internal app.<br>  
 Should the link leak, generate a new installation link immediately.  
